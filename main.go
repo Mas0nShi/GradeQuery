@@ -138,6 +138,6 @@ func query(types int, SessionId, stuID, name, queryID , queryName , acadYear , t
 func main() {
 	sessionId := ""
 
-	data := query(1,sessionId, "0417200322", "施滢琦","0417200322","施滢琦","2020-2021","2")
+	data := query(1,sessionId, "0417200xxx", "xxx","0417200xxx","xxx","2020-2021","2")
 	console.Log(data)
 }
