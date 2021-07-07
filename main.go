@@ -203,10 +203,10 @@ func getFormatTimeStr() string {
 	return t.Format("2006-01-02 15:04:05") + "." + nanoT[10:13]
 }
 func logRequestInfo(r *http.Request, reslen int64) {
-	format := getFormatTimeStr() + " - " + r.Method + " - \"" + r.URL.String() + "\" " + strconv.FormatInt(reslen, 10) + " \"" + r.Header.Get("User-Agent")
+	format := r.Method + " - \"" + r.URL.String() + "\" " + strconv.FormatInt(reslen, 10) + " \"" + r.Header.Get("User-Agent")
 	console.Info(format)
 	fs, _ := os.OpenFile("web.log", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0755)
-	fs.WriteString(format + "\n")
+	fs.WriteString(getFormatTimeStr() + " - " + format + "\n")
 	fs.Close()
 }
 
@@ -257,5 +257,6 @@ func main() {
 	// getGenMany(&user)
 	// getUserMany(&user)
 	http.HandleFunc("/api/v1", IndexHandler)
-	http.ListenAndServe("127.0.0.1:80", nil)
+	http.ListenAndServe(":13442", nil)
+
 }
