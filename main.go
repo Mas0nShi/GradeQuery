@@ -6,10 +6,20 @@ import (
 	"github.com/Mas0nShi/goConsole/console"
 	"github.com/crufter/goquery"
 	"log"
+	"net/http"
 	url2 "net/url"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
+
+type User struct {
+	sessionId string
+	id        string
+	name      string
+}
 
 type CourseInfo struct {
 	AcadYear     string `json:"学年"`
@@ -30,14 +40,24 @@ type CourseInfo struct {
 	CourseEnName string `json:"课程英文名称"`
 }
 type total []interface{}
+type resMsg struct {
+	Success int    `json:"success"`
+	Error   string `json:"error"`
+	Msg     total  `json:"msg"`
+	Count   int    `json:"count"`
+}
+
+func throwErrorMsg(msg string) string {
+	r, _ := json.Marshal(resMsg{Msg: total{}, Success: 0, Error: msg})
+	return MHttp.Bytes2str(r)
+}
 
 func getTextMid(str, start, end string) string {
-
 	n := strings.Index(str, start)
 	if n == -1 {
 		n = 0
 	} else {
-		n = n + len(start) // 增加了else，不加的会把start带上
+		n = n + len(start)
 	}
 	str = string([]byte(str)[n:])
 	m := strings.Index(str, end)
@@ -47,19 +67,73 @@ func getTextMid(str, start, end string) string {
 	str = string([]byte(str)[:m])
 	return str
 }
+func parseCourseInfo(dom goquery.Nodes) string {
+	nodes := dom.Find("#Datagrid1 tbody tr")
 
-func query(types int, SessionId, stuID, name, queryID, queryName, acadYear, term string) string {
+	if nodes.Length() == 0 {
+		return throwErrorMsg("Your session may expire.")
+	}
+
+	to2 := make(total, nodes.Length()-1)
+	cont := 0
+	nodes.Each(func(index int, element *goquery.Node) {
+		if index > 0 {
+			reg := regexp.MustCompile(`>(.+?)</td>`)
+			mageData := reg.FindAllStringSubmatch(nodes.Eq(index).Html(), -1)
+
+			if len(mageData) == 16 {
+				to2[cont] = CourseInfo{
+					AcadYear:     mageData[0][1],
+					Term:         mageData[1][1],
+					CourseCode:   mageData[2][1],
+					CourseName:   mageData[3][1],
+					CourseNature: mageData[4][1],
+					CourseAttr:   strings.Trim(mageData[5][1], " "),
+					Credit:       mageData[6][1],
+					GradePoint:   strings.Trim(mageData[7][1], " "),
+					Grade:        mageData[8][1],
+					MinorMark:    mageData[9][1],
+					RetestMark:   strings.Trim(mageData[10][1], " "),
+					RetakeGrades: strings.Trim(mageData[11][1], " "),
+					CollegeName:  mageData[12][1],
+					Remarks:      strings.Trim(mageData[13][1], " "),
+					ReworkMark:   mageData[14][1],
+					CourseEnName: strings.Trim(mageData[15][1], " "),
+				}
+				cont++
+			}
+		}
+	})
+	comBytes, _ := json.Marshal(resMsg{Msg: to2, Count: cont, Success: 1, Error: ""})
+	return MHttp.Bytes2str(comBytes)
+}
+func parseGeneralInfo(dom goquery.Nodes) string {
+	text := dom.Find("#pjxfjd").Text()
+	if text == "" {
+		return throwErrorMsg("Your session may expire.")
+	}
+	arr := strings.Split(text, "平均学分绩点：")
+	if len(arr) == 0 {
+		log.Fatalln("error in get #pjxfjd")
+	}
+	r, _ := json.Marshal(resMsg{Msg: total{arr[1]}, Success: 1, Error: ""})
+	return MHttp.Bytes2str(r)
+}
+
+// query
+// types : 1-term / 2-years
+// queryType : 1-CourseInfo / 2-GradePointAverage
+func query(types int, queryType int, SessionId, stuID, name, queryID, queryName, acadYear, term string) string {
 	var (
-		http = new(MHttp.MHttp)
-		url  = ""
-		ret  = ""
-		data = ""
-
+		http    = new(MHttp.MHttp)
+		url     = ""
+		ret     = ""
+		data    = ""
 		headers = map[string]string{
 			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.64",
 		}
 	)
-	name = url2.QueryEscape(name)
+	//name = url2.QueryEscape(name)
 
 	url = "http://jw.ypc.edu.cn/xs_main.aspx?xh=" + stuID
 	http.Open("GET", url)
@@ -79,9 +153,10 @@ func query(types int, SessionId, stuID, name, queryID, queryName, acadYear, term
 	case 1:
 		data = "__VIEWSTATE=" + __VIEWSTATE + "&__VIEWSTATEGENERATOR=" + __VIEWSTATEGENERATOR + "&ddlXN=" + acadYear + "&ddlXQ=" + term + "&Button1=%E6%8C%89%E5%AD%A6%E6%9C%9F%E6%9F%A5%E8%AF%A2"
 	case 2:
-		data = "__VIEWSTATE=" + __VIEWSTATE + "&__VIEWSTATEGENERATOR=" + __VIEWSTATEGENERATOR + "&ddlXN=" + acadYear + "&ddlXQ=" + term + "&Button1=%E6%8C%89%E5%AD%A6%E6%9C%9F%E6%9F%A5%E8%AF%A2"
+		data = "__VIEWSTATE=" + __VIEWSTATE + "&__VIEWSTATEGENERATOR=" + __VIEWSTATEGENERATOR + "&ddlXN=" + acadYear + "&ddlXQ=" + term + "&Button5=%E6%8C%89%E5%AD%A6%E5%B9%B4%E6%9F%A5%E8%AF%A2"
 	default:
-		panic("type error.")
+		//panic("type error.")
+		return throwErrorMsg("Param: type error.")
 	}
 
 	url = "http://jw.ypc.edu.cn/xscj_gc2.aspx?xh=" + queryID + "&xm=" + queryName + "&gnmkdm=N121611"
@@ -93,46 +168,94 @@ func query(types int, SessionId, stuID, name, queryID, queryName, acadYear, term
 	if err != nil {
 		log.Fatalln(err)
 	}
-	nodes := dom.Find("#Datagrid1 tbody tr")
 
-	to2 := make(total, nodes.Length()-1)
-	cont := 0
-	nodes.Each(func(index int, element *goquery.Node) {
-		if index > 0 {
-			reg := regexp.MustCompile(`>(.+?)</td>`)
-			mageData := reg.FindAllStringSubmatch(nodes.Eq(index).Html(), -1)
-			if len(mageData) == 16 {
-				stuctC := CourseInfo{
-					AcadYear:     mageData[0][1],
-					Term:         mageData[1][1],
-					CourseCode:   mageData[2][1],
-					CourseName:   mageData[3][1],
-					CourseNature: mageData[4][1],
-					CourseAttr:   strings.Trim(mageData[5][1], " "),
-					Credit:       mageData[6][1],
-					GradePoint:   strings.Trim(mageData[7][1], " "),
-					Grade:        mageData[8][1],
-					MinorMark:    mageData[9][1],
-					RetestMark:   strings.Trim(mageData[10][1], " "),
-					RetakeGrades: strings.Trim(mageData[11][1], " "),
-					CollegeName:  mageData[12][1],
-					Remarks:      strings.Trim(mageData[13][1], " "),
-					ReworkMark:   mageData[14][1],
-					CourseEnName: strings.Trim(mageData[15][1], " "),
-				}
-				to2[cont] = stuctC
-				cont++
-			}
-		}
-	})
+	refdata := ""
+	switch queryType {
+	case 1:
+		refdata = parseCourseInfo(dom)
+	case 2:
+		refdata = parseGeneralInfo(dom)
+	default:
+		//panic("error in queryTypes")
+		refdata = throwErrorMsg("Param: queryTypes error.")
+	}
+	return refdata
+}
 
-	comBytes, _ := json.Marshal(to2)
-	return MHttp.Bytes2str(comBytes)
+func getGenMany(user *User) {
+	for i := 1; i < 41; i++ {
+		toId := "0417200" + strconv.FormatInt(int64(300+i), 10)
+		data := query(2, 2, user.sessionId, user.id, user.name, toId, "anyOne", "2020-2021", "2")
+		console.Log(toId, " => ", data)
+	}
+}
+func getUserMany(user *User) {
+	for i := 1; i < 41; i++ {
+		toId := "0417200" + strconv.FormatInt(int64(300+i), 10)
+		data := query(1, 1, user.sessionId, user.id, user.name, toId, "anyOne", "2020-2021", "2")
+		console.Log(toId, " => ", data)
+	}
+}
+
+func getFormatTimeStr() string {
+	t := time.Now()
+	nanoT := strconv.FormatInt(t.UnixNano(), 10)
+	return t.Format("2006-01-02 15:04:05") + "." + nanoT[10:13]
+}
+func logRequestInfo(r *http.Request, reslen int64) {
+	format := getFormatTimeStr() + " - " + r.Method + " - \"" + r.URL.String() + "\" " + strconv.FormatInt(reslen, 10) + " \"" + r.Header.Get("User-Agent")
+	console.Info(format)
+	fs, _ := os.OpenFile("web.log", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0755)
+	fs.WriteString(format + "\n")
+	fs.Close()
+}
+
+func IndexHandler(w http.ResponseWriter, r *http.Request) {
+	paser, _ := url2.ParseQuery(r.URL.RawQuery)
+	qtt, _ := strconv.ParseInt(paser.Get("queryType"), 10, 64)
+	tt, _ := strconv.ParseInt(paser.Get("type"), 10, 64)
+	bokie := struct {
+		session string // require
+		user    string // require
+		name    string // Optional
+
+		queryId   string // require
+		queryType int    // require
+		types     int    // require
+		queryName string // Optional
+
+		acadYears string // require
+		term      string // require
+	}{
+		session: paser.Get("session"),
+		user:    paser.Get("user"),
+		name:    paser.Get("name"),
+
+		queryId:   paser.Get("queryId"),
+		queryType: int(qtt),
+		types:     int(tt),
+		queryName: paser.Get("queryName"),
+
+		acadYears: paser.Get("acadYears"),
+		term:      paser.Get("term"),
+	}
+	var res string
+
+	if bokie.session == "" || bokie.user == "" || bokie.queryId == "" || bokie.queryType == 0 || bokie.types == 0 || bokie.acadYears == "" || bokie.term == "" {
+		res = throwErrorMsg("Missing require params")
+	} else {
+		res = query(bokie.types, bokie.queryType, bokie.session, bokie.user, bokie.name, bokie.queryId, bokie.queryName, bokie.acadYears, bokie.term)
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Write(MHttp.Str2bytes(res))
+	logRequestInfo(r, int64(len(res)))
+
 }
 
 func main() {
-	sessionId := ""
-
-	data := query(1, sessionId, "0417200xxx", "syq", "0417200xxx", "xxx", "2020-2021", "2")
-	console.Log(data)
+	// user := User{sessionId: "", id: "", name: ""}
+	// getGenMany(&user)
+	// getUserMany(&user)
+	http.HandleFunc("/api/v1", IndexHandler)
+	http.ListenAndServe("127.0.0.1:80", nil)
 }
