@@ -15,12 +15,6 @@ import (
 	"time"
 )
 
-type User struct {
-	sessionId string
-	id        string
-	name      string
-}
-
 type CourseInfo struct {
 	AcadYear     string `json:"学年"`
 	Term         string `json:"学期"`
@@ -44,6 +38,7 @@ type resMsg struct {
 	Success int    `json:"success"`
 	Error   string `json:"error"`
 	Msg     total  `json:"msg"`
+	Average string `json:"average"`
 	Count   int    `json:"count"`
 }
 
@@ -59,19 +54,25 @@ func getTextMid(str, start, end string) string {
 	} else {
 		n = n + len(start)
 	}
-	str = string([]byte(str)[n:])
+	str = MHttp.Bytes2str([]byte(str)[n:])
 	m := strings.Index(str, end)
 	if m == -1 {
 		m = len(str)
 	}
-	str = string([]byte(str)[:m])
+	str = MHttp.Bytes2str([]byte(str)[:m])
 	return str
 }
 func parseCourseInfo(dom goquery.Nodes) string {
 	nodes := dom.Find("#Datagrid1 tbody tr")
+	text := dom.Find("#pjxfjd").Text()
 
 	if nodes.Length() == 0 {
 		return throwErrorMsg("Your session may expire.")
+	}
+
+	arr := strings.Split(text, "平均学分绩点：")
+	if len(arr) == 0 {
+		log.Fatalln("error in get #pjxfjd")
 	}
 
 	to2 := make(total, nodes.Length()-1)
@@ -104,25 +105,13 @@ func parseCourseInfo(dom goquery.Nodes) string {
 			}
 		}
 	})
-	comBytes, _ := json.Marshal(resMsg{Msg: to2, Count: cont, Success: 1, Error: ""})
+	comBytes, _ := json.Marshal(resMsg{Msg: to2, Count: cont, Success: 1, Error: "", Average: arr[1]})
 	return MHttp.Bytes2str(comBytes)
-}
-func parseGeneralInfo(dom goquery.Nodes) string {
-	text := dom.Find("#pjxfjd").Text()
-	if text == "" {
-		return throwErrorMsg("Your session may expire.")
-	}
-	arr := strings.Split(text, "平均学分绩点：")
-	if len(arr) == 0 {
-		log.Fatalln("error in get #pjxfjd")
-	}
-	r, _ := json.Marshal(resMsg{Msg: total{arr[1]}, Success: 1, Error: ""})
-	return MHttp.Bytes2str(r)
 }
 
 // query
 // types : 1-term / 2-years
-// queryType : 1-CourseInfo / 2-GradePointAverage
+// queryType : 1-CourseInfo
 func query(types int, queryType int, SessionId, stuID, name, queryID, queryName, acadYear, term string) string {
 	var (
 		http    = new(MHttp.MHttp)
@@ -133,14 +122,10 @@ func query(types int, queryType int, SessionId, stuID, name, queryID, queryName,
 			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.64",
 		}
 	)
-	//name = url2.QueryEscape(name)
 
-	url = "http://jw.ypc.edu.cn/xs_main.aspx?xh=" + stuID
-	http.Open("GET", url)
-	http.SetCookie("ASP.NET_SessionId", SessionId)
+	http.AutoHeaders(true)
 	http.SetRequestHeaders(headers)
-
-	http.Send(nil)
+	http.SetCookie("ASP.NET_SessionId", SessionId)
 
 	url = "http://jw.ypc.edu.cn/xscj_gc2.aspx?xh=" + stuID + "&xm=" + name + "&gnmkdm=N121611"
 	http.Open("GET", url)
@@ -155,14 +140,12 @@ func query(types int, queryType int, SessionId, stuID, name, queryID, queryName,
 	case 2:
 		data = "__VIEWSTATE=" + __VIEWSTATE + "&__VIEWSTATEGENERATOR=" + __VIEWSTATEGENERATOR + "&ddlXN=" + acadYear + "&ddlXQ=" + term + "&Button5=%E6%8C%89%E5%AD%A6%E5%B9%B4%E6%9F%A5%E8%AF%A2"
 	default:
-		//panic("type error.")
 		return throwErrorMsg("Param: type error.")
 	}
 
 	url = "http://jw.ypc.edu.cn/xscj_gc2.aspx?xh=" + queryID + "&xm=" + queryName + "&gnmkdm=N121611"
 	http.Open("POST", url)
 	http.Send(data)
-
 	ret = http.GetResponseText()
 	dom, err := goquery.ParseString(ret)
 	if err != nil {
@@ -173,28 +156,10 @@ func query(types int, queryType int, SessionId, stuID, name, queryID, queryName,
 	switch queryType {
 	case 1:
 		refdata = parseCourseInfo(dom)
-	case 2:
-		refdata = parseGeneralInfo(dom)
 	default:
-		//panic("error in queryTypes")
 		refdata = throwErrorMsg("Param: queryTypes error.")
 	}
 	return refdata
-}
-
-func getGenMany(user *User) {
-	for i := 1; i < 41; i++ {
-		toId := "0417200" + strconv.FormatInt(int64(300+i), 10)
-		data := query(2, 2, user.sessionId, user.id, user.name, toId, "anyOne", "2020-2021", "2")
-		console.Log(toId, " => ", data)
-	}
-}
-func getUserMany(user *User) {
-	for i := 1; i < 41; i++ {
-		toId := "0417200" + strconv.FormatInt(int64(300+i), 10)
-		data := query(1, 1, user.sessionId, user.id, user.name, toId, "anyOne", "2020-2021", "2")
-		console.Log(toId, " => ", data)
-	}
 }
 
 func getFormatTimeStr() string {
@@ -253,10 +218,10 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// user := User{sessionId: "", id: "", name: ""}
-	// getGenMany(&user)
-	// getUserMany(&user)
 	http.HandleFunc("/api/v1", IndexHandler)
-	http.ListenAndServe(":13442", nil)
+	err := http.ListenAndServe(":13442", nil)
+	if err != nil {
+		panic("ERROR IN ListenAndServe")
+	}
 
 }
