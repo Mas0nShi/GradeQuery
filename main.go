@@ -112,7 +112,7 @@ func parseCourseInfo(dom goquery.Nodes) string {
 // query
 // types : 1-term / 2-years
 // queryType : 1-CourseInfo
-func query(types int, queryType int, SessionId, stuID, name, queryID, queryName, acadYear, term string) string {
+func query(host string, types int, queryType int, SessionId, stuID, name, queryID, queryName, acadYear, term string) string {
 	var (
 		http    = new(MHttp.MHttp)
 		url     = ""
@@ -122,12 +122,12 @@ func query(types int, queryType int, SessionId, stuID, name, queryID, queryName,
 			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.64",
 		}
 	)
-
+	hostUrl := "http://" + host
 	http.AutoHeaders(true)
 	http.SetRequestHeaders(headers)
 	http.SetCookie("ASP.NET_SessionId", SessionId)
 
-	url = "http://jw.ypc.edu.cn/xscj_gc2.aspx?xh=" + stuID + "&xm=" + name + "&gnmkdm=N121611"
+	url = hostUrl + "/xscj_gc2.aspx?xh=" + stuID + "&xm=" + name + "&gnmkdm=N121611"
 	http.Open("GET", url)
 	http.Send(nil)
 	ret = http.GetResponseText()
@@ -143,7 +143,7 @@ func query(types int, queryType int, SessionId, stuID, name, queryID, queryName,
 		return throwErrorMsg("Param: type error.")
 	}
 
-	url = "http://jw.ypc.edu.cn/xscj_gc2.aspx?xh=" + queryID + "&xm=" + queryName + "&gnmkdm=N121611"
+	url = hostUrl + "/xscj_gc2.aspx?xh=" + queryID + "&xm=" + queryName + "&gnmkdm=N121611"
 	http.Open("POST", url)
 	http.Send(data)
 	ret = http.GetResponseText()
@@ -180,6 +180,8 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 	qtt, _ := strconv.ParseInt(paser.Get("queryType"), 10, 64)
 	tt, _ := strconv.ParseInt(paser.Get("type"), 10, 64)
 	bokie := struct {
+		host string // require
+
 		session string // require
 		user    string // require
 		name    string // Optional
@@ -192,6 +194,7 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 		acadYears string // require
 		term      string // require
 	}{
+		host:    paser.Get("host"),
 		session: paser.Get("session"),
 		user:    paser.Get("user"),
 		name:    paser.Get("name"),
@@ -206,10 +209,10 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var res string
 
-	if bokie.session == "" || bokie.user == "" || bokie.queryId == "" || bokie.queryType == 0 || bokie.types == 0 || bokie.acadYears == "" || bokie.term == "" {
+	if bokie.host == "" || bokie.session == "" || bokie.user == "" || bokie.queryId == "" || bokie.queryType == 0 || bokie.types == 0 || bokie.acadYears == "" || bokie.term == "" {
 		res = throwErrorMsg("Missing require params")
 	} else {
-		res = query(bokie.types, bokie.queryType, bokie.session, bokie.user, bokie.name, bokie.queryId, bokie.queryName, bokie.acadYears, bokie.term)
+		res = query(bokie.host, bokie.types, bokie.queryType, bokie.session, bokie.user, bokie.name, bokie.queryId, bokie.queryName, bokie.acadYears, bokie.term)
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Write(MHttp.Str2bytes(res))
