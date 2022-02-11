@@ -6,7 +6,7 @@ import (
 	"github.com/Mas0nShi/goConsole/console"
 	"github.com/crufter/goquery"
 	"log"
-	"net/http"
+	nhttp "net/http"
 	url2 "net/url"
 	"os"
 	"regexp"
@@ -102,6 +102,9 @@ func parseCourseInfo(dom goquery.Nodes) string {
 					CourseEnName: strings.Trim(mageData[15][1], " "),
 				}
 				cont++
+			} else {
+				log.Fatalln("the mageData length: " + strconv.FormatInt(int64(len(mageData)), 10) + "\n" + nodes.Eq(index).Html())
+
 			}
 		}
 	})
@@ -133,12 +136,14 @@ func query(host string, types int, queryType int, SessionId, stuID, name, queryI
 	ret = http.GetResponseText()
 	__VIEWSTATE := url2.QueryEscape(getTextMid(ret, "__VIEWSTATE\" value=\"", "\" />"))
 	__VIEWSTATEGENERATOR := getTextMid(ret, "__VIEWSTATEGENERATOR\" value=\"", "\" />")
-
+	data = "__VIEWSTATE=" + __VIEWSTATE + "&__VIEWSTATEGENERATOR=" + __VIEWSTATEGENERATOR + "&ddlXN=" + acadYear + "&ddlXQ=" + term
 	switch types {
 	case 1:
-		data = "__VIEWSTATE=" + __VIEWSTATE + "&__VIEWSTATEGENERATOR=" + __VIEWSTATEGENERATOR + "&ddlXN=" + acadYear + "&ddlXQ=" + term + "&Button1=%E6%8C%89%E5%AD%A6%E6%9C%9F%E6%9F%A5%E8%AF%A2"
+		data += "&Button1=%E6%8C%89%E5%AD%A6%E6%9C%9F%E6%9F%A5%E8%AF%A2"
+		break
 	case 2:
-		data = "__VIEWSTATE=" + __VIEWSTATE + "&__VIEWSTATEGENERATOR=" + __VIEWSTATEGENERATOR + "&ddlXN=" + acadYear + "&ddlXQ=" + term + "&Button5=%E6%8C%89%E5%AD%A6%E5%B9%B4%E6%9F%A5%E8%AF%A2"
+		data += "&Button5=%E6%8C%89%E5%AD%A6%E5%B9%B4%E6%9F%A5%E8%AF%A2"
+		break
 	default:
 		return throwErrorMsg("Param: type error.")
 	}
@@ -156,8 +161,10 @@ func query(host string, types int, queryType int, SessionId, stuID, name, queryI
 	switch queryType {
 	case 1:
 		refdata = parseCourseInfo(dom)
+		break
 	default:
 		refdata = throwErrorMsg("Param: queryTypes error.")
+		break
 	}
 	return refdata
 }
@@ -167,15 +174,17 @@ func getFormatTimeStr() string {
 	nanoT := strconv.FormatInt(t.UnixNano(), 10)
 	return t.Format("2006-01-02 15:04:05") + "." + nanoT[10:13]
 }
-func logRequestInfo(r *http.Request, reslen int64) {
+func logRequestInfo(r *nhttp.Request, reslen int64) {
 	format := r.Method + " - \"" + r.URL.String() + "\" " + strconv.FormatInt(reslen, 10) + " \"" + r.Header.Get("User-Agent")
 	console.Info(format)
 	fs, _ := os.OpenFile("web.log", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0755)
-	fs.WriteString(getFormatTimeStr() + " - " + format + "\n")
-	fs.Close()
+
+	_, _ = fs.WriteString(getFormatTimeStr() + " - " + format + "\n")
+	_ = fs.Close()
+
 }
 
-func IndexHandler(w http.ResponseWriter, r *http.Request) {
+func IndexHandler(w nhttp.ResponseWriter, r *nhttp.Request) {
 	paser, _ := url2.ParseQuery(r.URL.RawQuery)
 	qtt, _ := strconv.ParseInt(paser.Get("queryType"), 10, 64)
 	tt, _ := strconv.ParseInt(paser.Get("type"), 10, 64)
@@ -215,14 +224,14 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 		res = query(bokie.host, bokie.types, bokie.queryType, bokie.session, bokie.user, bokie.name, bokie.queryId, bokie.queryName, bokie.acadYears, bokie.term)
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Write(MHttp.Str2bytes(res))
+	_, _ = w.Write(MHttp.Str2bytes(res))
 	logRequestInfo(r, int64(len(res)))
 
 }
 
 func main() {
-	http.HandleFunc("/api/v1", IndexHandler)
-	err := http.ListenAndServe(":13442", nil)
+	nhttp.HandleFunc("/api/v1", IndexHandler)
+	err := nhttp.ListenAndServe(":13442", nil)
 	if err != nil {
 		panic("ERROR IN ListenAndServe")
 	}
